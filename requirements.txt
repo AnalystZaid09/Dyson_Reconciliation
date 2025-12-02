@@ -1,0 +1,7 @@
+streamlit
+python-dotenv
+pandas
+openpyxl
+rapidfuzz
+azure-core
+azure-ai-documentintelligence
