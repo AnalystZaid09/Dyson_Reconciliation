@@ -1,5 +1,3 @@
-# streamlit_app.py
-
 import os
 import io
 import ast
@@ -19,13 +17,15 @@ from openpyxl import Workbook
 # INITIAL SETUP
 # ======================================================================
 
-DEFAULT_AZURE_ENDPOINT = "https://reconcilation-tool-8319186601.cognitiveservices.azure.com/"
+load_dotenv()
 
-DEFAULT_AZURE_KEY = "1e8vpSArbPXrkFMIwtE1Il4fTglnlBeTXp3JeM5gH5ZTMNNoyOLsJQQJ99BLACGhslBXJ3w3AAALACOGo1o5"
+# These come from your .env file
+DEFAULT_AZURE_ENDPOINT = os.getenv("AZURE_ENDPOINT", "")
+DEFAULT_AZURE_KEY = os.getenv("AZURE_KEY", "")
 
-
+# Config thresholds
 NAME_THRESHOLD = 90
-AMOUNT_TOL_PCT = 0.005
+AMOUNT_TOL_PCT = 0.005   # 0.5%
 SKU_STRICT = False
 
 logging.basicConfig(
@@ -429,7 +429,7 @@ def clean_excel_file_from_upload(upload_file):
         lbl if lbl.strip() != "" else f"col_{i}"
         for i, lbl in enumerate(header_labels)
     ]
-    df = raw.iloc[header_row + 1 :].copy().reset_index(drop=True)
+    df = raw.iloc[header_row + 1:].copy().reset_index(drop=True)
     df.columns = header_labels
     for c in df.columns:
         df[c] = df[c].apply(lambda x: x.strip() if isinstance(x, str) else x)
@@ -575,7 +575,7 @@ def compare_mapped_row(ex_row, ocr_line):
 
 
 # ======================================================================
-# SAVE SUMMARY TO EXCEL (DYNAMIC COLUMNS)
+# SAVE SUMMARY TO EXCEL
 # ======================================================================
 
 def save_summary_to_excel_bytes(summary_row: dict, cols: list):
@@ -698,7 +698,7 @@ def process_invoice_pair(pdf_file, excel_file, client: DocumentIntelligenceClien
         if not col.empty:
             excel_po_ref = str(col.iloc[0]).strip()
 
-    # We still map/compare (even if we don't show) – could be useful later
+    # we still map / compare (not displayed but could be useful)
     mapping = map_excel_to_ocr(excel_rows, ocr_items)
     comparisons = []
     for ei, ex in enumerate(excel_rows):
@@ -724,17 +724,13 @@ def process_invoice_pair(pdf_file, excel_file, client: DocumentIntelligenceClien
     if "included_tax" in cleaned.columns:
         col = cleaned["included_tax"].dropna()
         if not col.empty:
-            excel_included_tax_sum = (
-                col.apply(parse_number).dropna().sum()
-            )
+            excel_included_tax_sum = col.apply(parse_number).dropna().sum()
 
     excel_total_value_sum = None
     if "total_value" in cleaned.columns:
         col = cleaned["total_value"].dropna()
         if not col.empty:
-            excel_total_value_sum = (
-                col.apply(parse_number).dropna().sum()
-            )
+            excel_total_value_sum = col.apply(parse_number).dropna().sum()
 
     invoice_summary = {
         "ocr_invoice_ref": ocr_ref,
@@ -768,7 +764,7 @@ def main():
 
     st.title("🧾 Invoice Reconciliation Tool")
 
-    # Sidebar
+    # Sidebar (no endpoint/key here)
     st.sidebar.header("⚙️ Configuration")
 
     NAME_THRESHOLD = st.sidebar.slider(
@@ -796,6 +792,10 @@ def main():
         "Show raw Azure JSON output (debug)", value=False
     )
 
+    # Use values ONLY from .env
+    endpoint = DEFAULT_AZURE_ENDPOINT
+    key = DEFAULT_AZURE_KEY
+
     # Uploads
     st.subheader("1️⃣ Upload files")
     col1, col2 = st.columns(2)
@@ -817,7 +817,10 @@ def main():
 
     if run_button:
         if not endpoint or not key:
-            st.error("Please provide Azure endpoint and key in the sidebar.")
+            st.error(
+                "Azure endpoint or key is not configured.\n\n"
+                "Please set AZURE_ENDPOINT and AZURE_KEY in your `.env` file."
+            )
             return
         if not pdf_file or not excel_file:
             st.error("Please upload both an invoice PDF and a reference Excel file.")
@@ -835,7 +838,7 @@ def main():
                 return
 
         # ==============================================================
-        # 2️⃣ SUMMARY TABLE – with quantities + refs + accuracy
+        # 2️⃣ Invoice Summary (with quantities, refs, accuracy)
         # ==============================================================
         st.subheader("2️⃣ Invoice Summary")
 
@@ -881,10 +884,8 @@ def main():
         cols_order = list(summary_row.keys())
         summary_df = pd.DataFrame([summary_row])
 
-        # Nicely formatted view
+        # Pretty formatting
         summary_display = summary_df.copy()
-
-        # Format numeric columns
         for col in [
             "Quantity (PDF)",
             "Quantity (Excel)",
@@ -908,7 +909,7 @@ def main():
         st.table(summary_display[cols_order])
 
         # ==============================================================
-        # 3️⃣ DOWNLOADS – ONLY SUMMARY FIELDS
+        # 3️⃣ Downloads – summary only
         # ==============================================================
         st.markdown("---")
         st.subheader("3️⃣ Downloads")
